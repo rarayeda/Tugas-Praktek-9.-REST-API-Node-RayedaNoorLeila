@@ -1,0 +1,938 @@
+[
+  {
+    "id": "iot_praktek9",
+    "type": "tab",
+    "label": "Praktikum 9 - IoT Full Stack",
+    "disabled": false,
+    "info": "MQTT + REST API + WebSocket + SQLite + threshold + dashboard",
+    "env": []
+  },
+  {
+    "id": "mqtt_broker",
+    "type": "mqtt-broker",
+    "name": "Mosquitto Windows localhost",
+    "broker": "127.0.0.1",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "willMsg": {}
+  },
+  {
+    "id": "sqlite_db",
+    "type": "sqlitedb",
+    "db": "${IOT_SQLITE_PATH}",
+    "mode": "RWC"
+  },
+  {
+    "id": "ws_listener",
+    "type": "websocket-listener",
+    "path": "/ws/sensor",
+    "wholemsg": "false"
+  },
+  {
+    "id": "init_start",
+    "type": "inject",
+    "z": "iot_praktek9",
+    "name": "Inisialisasi SQLite",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 75,
+    "wires": [
+      [
+        "init_sql"
+      ]
+    ]
+  },
+  {
+    "id": "init_sql",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "CREATE TABLE",
+    "func": "msg.topic = `CREATE TABLE IF NOT EXISTS readings (\n id INTEGER PRIMARY KEY AUTOINCREMENT, suhu REAL NOT NULL, kelembaban REAL NOT NULL,\n timestamp TEXT NOT NULL, received TEXT NOT NULL\n);\nCREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value REAL NOT NULL);\nINSERT OR IGNORE INTO settings (name,value) VALUES ('threshold',30);\nCREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT,\n suhu REAL NOT NULL, threshold REAL NOT NULL, timestamp TEXT NOT NULL);\nCREATE INDEX IF NOT EXISTS idx_readings_id ON readings(id);\nCREATE INDEX IF NOT EXISTS idx_alerts_id ON alerts(id);`;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 75,
+    "wires": [
+      [
+        "db_init"
+      ]
+    ]
+  },
+  {
+    "id": "db_init",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "Create database tables",
+    "mydb": "sqlite_db",
+    "sqlquery": "batch",
+    "sql": "",
+    "x": 560,
+    "y": 75,
+    "wires": [
+      [
+        "db_load_threshold"
+      ]
+    ]
+  },
+  {
+    "id": "db_load_threshold",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "Baca nilai threshold",
+    "mydb": "sqlite_db",
+    "sqlquery": "fixed",
+    "sql": "SELECT value FROM settings WHERE name='threshold' LIMIT 1;",
+    "x": 745,
+    "y": 75,
+    "wires": [
+      [
+        "cache_threshold"
+      ]
+    ]
+  },
+  {
+    "id": "cache_threshold",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Cache threshold awal",
+    "func": "const rows=msg.payload||[];\nflow.set('threshold', rows.length ? Number(rows[0].value) : 30);\nnode.status({fill:'green',shape:'dot',text:'threshold = '+flow.get('threshold')+' C'});\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 950,
+    "y": 75,
+    "wires": []
+  },
+  {
+    "id": "mqtt_sensor",
+    "type": "mqtt in",
+    "z": "iot_praktek9",
+    "name": "ESP32 -> iot/sensor",
+    "topic": "iot/sensor",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "mqtt_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 140,
+    "y": 170,
+    "wires": [
+      [
+        "validate_sensor"
+      ]
+    ]
+  },
+  {
+    "id": "validate_sensor",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Validasi sensor -> SQLite",
+    "func": "let input=msg.payload;\nif (typeof input === 'string') { try {input=JSON.parse(input);} catch (_) {return null;} }\nif (!input || typeof input !== 'object') return null;\nconst suhu=Number(input.suhu), humid=Number(input.kelembaban);\nif (!Number.isFinite(suhu) || suhu < -40 || suhu > 80 || !Number.isFinite(humid) || humid < 0 || humid > 100) {\n node.warn('Nilai sensor tidak valid, dibuang'); return null;\n}\nconst received=new Date().toISOString();\nconst timestamp=typeof input.timestamp==='string' && !isNaN(Date.parse(input.timestamp)) ? input.timestamp : received;\nmsg.sensor={suhu, kelembaban:humid, timestamp, received};\nmsg.params={$suhu:suhu,$humid:humid,$timestamp:timestamp,$received:received};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 170,
+    "wires": [
+      [
+        "db_write_sensor"
+      ]
+    ]
+  },
+  {
+    "id": "db_write_sensor",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "INSERT readings",
+    "mydb": "sqlite_db",
+    "sqlquery": "prepared",
+    "sql": "INSERT INTO readings (suhu,kelembaban,timestamp,received) VALUES ($suhu,$humid,$timestamp,$received);",
+    "x": 615,
+    "y": 170,
+    "wires": [
+      [
+        "process_sensor"
+      ]
+    ]
+  },
+  {
+    "id": "process_sensor",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Update cache + alert crossing",
+    "func": "const d=msg.sensor;\nconst prev=flow.get('lastSensor');\nflow.set('lastSensor',d);\nconst threshold=Number(flow.get('threshold') ?? 30);\nconst alert=d.suhu>threshold && (!prev || prev.suhu<=threshold);\nconst wsMsg={wsEvent:{type:'sensor',data:d,threshold}};\nif (alert) {\n const item={suhu:d.suhu,threshold,timestamp:d.received,\n message:`Suhu ${d.suhu}°C melewati batas ${threshold}°C`};\n return [wsMsg,{alert:item}];\n}\nreturn [wsMsg,null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 835,
+    "y": 170,
+    "wires": [
+      [
+        "ws_broadcast"
+      ],
+      [
+        "prep_alert"
+      ]
+    ]
+  },
+  {
+    "id": "prep_alert",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Siapkan log alert",
+    "func": "const a=msg.alert;\nmsg.params={$suhu:a.suhu,$threshold:a.threshold,$timestamp:a.timestamp};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1015,
+    "y": 195,
+    "wires": [
+      [
+        "db_alert"
+      ]
+    ]
+  },
+  {
+    "id": "db_alert",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "INSERT alerts",
+    "mydb": "sqlite_db",
+    "sqlquery": "prepared",
+    "sql": "INSERT INTO alerts(suhu,threshold,timestamp) VALUES ($suhu,$threshold,$timestamp);",
+    "x": 1200,
+    "y": 195,
+    "wires": [
+      [
+        "publish_alert"
+      ]
+    ]
+  },
+  {
+    "id": "publish_alert",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Notifikasi dashboard + MQTT",
+    "func": "return [ {wsEvent:{type:'alert',data:msg.alert}},\n {topic:'iot/alert',payload:JSON.stringify(msg.alert)} ];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1420,
+    "y": 195,
+    "wires": [
+      [
+        "ws_broadcast"
+      ],
+      [
+        "mqtt_alert_out"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt_alert_out",
+    "type": "mqtt out",
+    "z": "iot_praktek9",
+    "name": "Notif iot/alert",
+    "topic": "",
+    "qos": "1",
+    "retain": "false",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "mqtt_broker",
+    "x": 1600,
+    "y": 230,
+    "wires": []
+  },
+  {
+    "id": "mqtt_status",
+    "type": "mqtt in",
+    "z": "iot_praktek9",
+    "name": "Status lampu dari simulator",
+    "topic": "iot/status",
+    "qos": "1",
+    "datatype": "json",
+    "broker": "mqtt_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 145,
+    "y": 290,
+    "wires": [
+      [
+        "update_lamp"
+      ]
+    ]
+  },
+  {
+    "id": "update_lamp",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Update status lampu",
+    "func": "let p=msg.payload;\nif (typeof p==='string') {try {p=JSON.parse(p);} catch (_) {return null;}}\nif (!p || p.device!=='lamp' || !['on','off'].includes(p.state)) return null;\nflow.set('lampState',p.state);\nreturn {wsEvent:{type:'lamp',state:p.state}};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 290,
+    "wires": [
+      [
+        "ws_broadcast"
+      ]
+    ]
+  },
+  {
+    "id": "get_suhu",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/suhu",
+    "url": "/api/suhu",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 420,
+    "wires": [
+      [
+        "get_suhu_fn"
+      ]
+    ]
+  },
+  {
+    "id": "get_suhu_fn",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "GET sensor terakhir",
+    "func": "msg.payload={status:'success',data:flow.get('lastSensor')||{suhu:null,kelembaban:null,timestamp:null},server_time:new Date().toISOString()};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 415,
+    "y": 420,
+    "wires": [
+      [
+        "res_suhu"
+      ]
+    ]
+  },
+  {
+    "id": "res_suhu",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 420,
+    "wires": []
+  },
+  {
+    "id": "get_history",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/history",
+    "url": "/api/history",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 490,
+    "wires": [
+      [
+        "db_history"
+      ]
+    ]
+  },
+  {
+    "id": "db_history",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "50 readings dari SQLite",
+    "mydb": "sqlite_db",
+    "sqlquery": "fixed",
+    "sql": "SELECT suhu, kelembaban, timestamp, received FROM readings ORDER BY id DESC LIMIT 50;",
+    "x": 415,
+    "y": 490,
+    "wires": [
+      [
+        "history_json"
+      ]
+    ]
+  },
+  {
+    "id": "history_json",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Format JSON history",
+    "func": "const data=(msg.payload||[]).reverse();\nmsg.payload={status:'success',count:data.length,data};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 490,
+    "wires": [
+      [
+        "res_history"
+      ]
+    ]
+  },
+  {
+    "id": "res_history",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 490,
+    "wires": []
+  },
+  {
+    "id": "get_threshold",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/threshold",
+    "url": "/api/threshold",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 560,
+    "wires": [
+      [
+        "db_threshold"
+      ]
+    ]
+  },
+  {
+    "id": "db_threshold",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "SELECT threshold",
+    "mydb": "sqlite_db",
+    "sqlquery": "fixed",
+    "sql": "SELECT value FROM settings WHERE name='threshold' LIMIT 1;",
+    "x": 415,
+    "y": 560,
+    "wires": [
+      [
+        "threshold_json"
+      ]
+    ]
+  },
+  {
+    "id": "threshold_json",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Format threshold",
+    "func": "const rows=msg.payload||[];\nconst threshold=rows.length ? Number(rows[0].value) : 30;\nflow.set('threshold',threshold);\nmsg.payload={status:'success',threshold};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 560,
+    "wires": [
+      [
+        "res_get_threshold"
+      ]
+    ]
+  },
+  {
+    "id": "res_get_threshold",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 560,
+    "wires": []
+  },
+  {
+    "id": "put_threshold",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "PUT /api/threshold",
+    "url": "/api/threshold",
+    "method": "put",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 630,
+    "wires": [
+      [
+        "put_validate"
+      ]
+    ]
+  },
+  {
+    "id": "put_validate",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Validasi rentang 0-80",
+    "func": "const value=msg.payload && msg.payload.threshold;\nif (typeof value!=='number' || !Number.isFinite(value) || value<0 || value>80) {\n msg.statusCode=400;\n msg.payload={status:'error',message:'threshold harus angka 0-80 (°C)'};\n return [null,msg];\n}\nmsg.requestedThreshold=value;\nmsg.params={$value:value};\nreturn [msg,null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 385,
+    "y": 630,
+    "wires": [
+      [
+        "db_put_threshold"
+      ],
+      [
+        "res_put_threshold"
+      ]
+    ]
+  },
+  {
+    "id": "db_put_threshold",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "UPDATE threshold prepared",
+    "mydb": "sqlite_db",
+    "sqlquery": "prepared",
+    "sql": "INSERT INTO settings(name,value) VALUES ('threshold',$value) ON CONFLICT(name) DO UPDATE SET value=excluded.value;",
+    "x": 615,
+    "y": 630,
+    "wires": [
+      [
+        "threshold_updated"
+      ]
+    ]
+  },
+  {
+    "id": "threshold_updated",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Simpan cache + WebSocket",
+    "func": "const threshold=msg.requestedThreshold;\nflow.set('threshold',threshold);\nconst http={...msg,payload:{status:'success',threshold,message:'Batas suhu disimpan di SQLite'}};\nreturn [http,{wsEvent:{type:'threshold',threshold}}];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 840,
+    "y": 630,
+    "wires": [
+      [
+        "res_put_threshold"
+      ],
+      [
+        "ws_broadcast"
+      ]
+    ]
+  },
+  {
+    "id": "res_put_threshold",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 630,
+    "wires": []
+  },
+  {
+    "id": "post_control",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "POST /api/kontrol",
+    "url": "/api/kontrol",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 705,
+    "wires": [
+      [
+        "check_control"
+      ]
+    ]
+  },
+  {
+    "id": "check_control",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Validasi lampu on/off",
+    "func": "const p=msg.payload||{};\nif (p.device!=='lamp' || !['on','off'].includes(p.action)) {\n msg.statusCode=400;\n msg.payload={status:'error',message:'Gunakan {\"device\":\"lamp\",\"action\":\"on|off\"}'};\n return [msg,null];\n}\nconst command={device:'lamp',action:p.action};\nconst http={...msg,payload:{status:'success',message:'Perintah dipublikasikan ke MQTT',sent:command}};\nreturn [http,{topic:'iot/kontrol',payload:JSON.stringify(command)}];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 705,
+    "wires": [
+      [
+        "res_control"
+      ],
+      [
+        "mqtt_control_out"
+      ]
+    ]
+  },
+  {
+    "id": "res_control",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 705,
+    "wires": []
+  },
+  {
+    "id": "mqtt_control_out",
+    "type": "mqtt out",
+    "z": "iot_praktek9",
+    "name": "Kontrol -> MQTT",
+    "topic": "",
+    "qos": "1",
+    "retain": "false",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "mqtt_broker",
+    "x": 805,
+    "y": 755,
+    "wires": []
+  },
+  {
+    "id": "get_status",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/status",
+    "url": "/api/status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 790,
+    "wires": [
+      [
+        "status_json"
+      ]
+    ]
+  },
+  {
+    "id": "status_json",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Status aktuator",
+    "func": "msg.payload={status:'success',device:'lamp',state:flow.get('lampState')||'unknown'};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 790,
+    "wires": [
+      [
+        "res_status"
+      ]
+    ]
+  },
+  {
+    "id": "res_status",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 790,
+    "wires": []
+  },
+  {
+    "id": "get_alerts",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/alerts",
+    "url": "/api/alerts",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 865,
+    "wires": [
+      [
+        "db_get_alerts"
+      ]
+    ]
+  },
+  {
+    "id": "db_get_alerts",
+    "type": "sqlite",
+    "z": "iot_praktek9",
+    "name": "Notifikasi tersimpan",
+    "mydb": "sqlite_db",
+    "sqlquery": "fixed",
+    "sql": "SELECT suhu,threshold,timestamp FROM alerts ORDER BY id DESC LIMIT 20;",
+    "x": 415,
+    "y": 865,
+    "wires": [
+      [
+        "alerts_json"
+      ]
+    ]
+  },
+  {
+    "id": "alerts_json",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Format data alert",
+    "func": "const data=msg.payload||[];\nmsg.payload={status:'success',count:data.length,data};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 760,
+    "y": 865,
+    "wires": [
+      [
+        "res_alerts"
+      ]
+    ]
+  },
+  {
+    "id": "res_alerts",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 865,
+    "wires": []
+  },
+  {
+    "id": "get_health",
+    "type": "http in",
+    "z": "iot_praktek9",
+    "name": "GET /api/health",
+    "url": "/api/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 145,
+    "y": 940,
+    "wires": [
+      [
+        "health_json"
+      ]
+    ]
+  },
+  {
+    "id": "health_json",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Public health",
+    "func": "msg.payload={status:'success',service:'iot-node-red',time:new Date().toISOString()};\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 940,
+    "wires": [
+      [
+        "res_health"
+      ]
+    ]
+  },
+  {
+    "id": "res_health",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 940,
+    "wires": []
+  },
+  {
+    "id": "ws_input",
+    "type": "websocket in",
+    "z": "iot_praktek9",
+    "name": "WebSocket - AUTH",
+    "server": "ws_listener",
+    "client": "",
+    "x": 120,
+    "y": 1050,
+    "wires": [
+      [
+        "ws_auth"
+      ]
+    ]
+  },
+  {
+    "id": "ws_auth",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Auth dengan API key (WS)",
+    "func": "const sid=msg._session && msg._session.id;\nif (!sid) return null;\nlet p=msg.payload;\ntry { if (typeof p==='string') p=JSON.parse(p); } catch (_) {p=null;}\nif (!p || p.type!=='auth' || typeof p.api_key!=='string' || p.api_key!==global.get('apiKey')) {\n return {payload:JSON.stringify({type:'error',message:'Autentikasi WebSocket gagal'}),_session:msg._session};\n}\nconst sessions=flow.get('wsSessions')||{};\nsessions[sid]=msg._session;\n// Hindari pertumbuhan berlebihan saat klien putus tanpa logout.\nconst keys=Object.keys(sessions);\nif (keys.length>100) keys.slice(0,keys.length-100).forEach(k=>delete sessions[k]);\nflow.set('wsSessions',sessions);\nreturn {payload:JSON.stringify({type:'authenticated',message:'WebSocket aktif'}),_session:msg._session};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 395,
+    "y": 1050,
+    "wires": [
+      [
+        "ws_out"
+      ]
+    ]
+  },
+  {
+    "id": "ws_broadcast",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Broadcast ke klien terautentikasi",
+    "func": "const sessions=Object.values(flow.get('wsSessions')||{});\nif (!msg.wsEvent || !sessions.length) return null;\nconst value=JSON.stringify(msg.wsEvent);\nreturn [sessions.map(s=>({payload:value,_session:s}))];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 650,
+    "y": 1050,
+    "wires": [
+      [
+        "ws_out"
+      ]
+    ]
+  },
+  {
+    "id": "ws_out",
+    "type": "websocket out",
+    "z": "iot_praktek9",
+    "name": "Kirim ke WebSocket client",
+    "server": "ws_listener",
+    "client": "",
+    "x": 950,
+    "y": 1050,
+    "wires": []
+  },
+  {
+    "id": "catch_errors",
+    "type": "catch",
+    "z": "iot_praktek9",
+    "name": "Tangkap error SQLite / function",
+    "scope": null,
+    "uncaught": false,
+    "x": 155,
+    "y": 1170,
+    "wires": [
+      [
+        "err_process"
+      ]
+    ]
+  },
+  {
+    "id": "err_process",
+    "type": "function",
+    "z": "iot_praktek9",
+    "name": "Balas 500 jika request HTTP",
+    "func": "node.error('Flow error: '+(msg.error?.message||'unknown'));\nif (msg.req && msg.res) {\n msg.statusCode=500;\n msg.payload={status:'error',message:'Kesalahan internal database/server'};\n return msg;\n}\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 425,
+    "y": 1170,
+    "wires": [
+      [
+        "res_error"
+      ]
+    ]
+  },
+  {
+    "id": "res_error",
+    "type": "http response",
+    "z": "iot_praktek9",
+    "name": "HTTP JSON",
+    "x": 1010,
+    "y": 1170,
+    "wires": []
+  },
+  {
+    "id": "about",
+    "type": "comment",
+    "z": "iot_praktek9",
+    "name": "Alur praktikum: simulator MQTT -> SQLite -> REST + WebSocket -> dashboard",
+    "info": "Editor: /red; Dashboard: /dashboard/; WebSocket: /ws/sensor; SQLite di volume Docker; API key di .env",
+    "x": 400,
+    "y": 1235,
+    "wires": []
+  }
+]

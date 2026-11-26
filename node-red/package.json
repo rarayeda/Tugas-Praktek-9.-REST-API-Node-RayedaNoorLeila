@@ -1,0 +1,9 @@
+{
+  "name": "praktikum9-iot-nodered",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node-RED + MQTT + REST API + WebSocket + SQLite",
+  "dependencies": {
+    "node-red-node-sqlite": "2.0.1"
+  }
+}

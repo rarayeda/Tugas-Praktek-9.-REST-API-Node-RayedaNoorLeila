@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>IoT Control Center | Praktikum 9</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-icon">◉</span><div>NODE<span class="accent">.</span>IOT <small>CONTROL PLATFORM</small></div></div>
+      <div class="nav-label">WORKSPACE</div>
+      <div class="nav-item active"><span>▦</span> Overview</div>
+      <div class="nav-item"><span>◷</span> Sensor history</div>
+      <div class="nav-item"><span>⚡</span> Device control</div>
+      <div class="nav-line"></div>
+      <div class="sidebar-bottom">
+        <span class="orb"></span><div><strong>MQTT • Node-RED</strong><span>ESP32 Simulation</span></div>
+      </div>
+    </aside>
+    <main class="content">
+      <header class="topbar">
+        <div class="breadcrumbs">Workspace <span>/</span> Monitoring <span>/</span> <strong>Dashboard</strong></div>
+        <div class="top-right"><span id="ws-pill" class="status-pill offline"><span class="status-dot"></span> DISCONNECTED</span><span class="profile">P9</span></div>
+      </header>
+      <section class="heading">
+        <div><div class="eyebrow">REAL-TIME ENVIRONMENT MONITORING</div><h1>IoT Control Center<span class="accent">.</span></h1><p>Monitoring suhu, kelembaban, dan aktuator melalui MQTT + REST API + WebSocket.</p></div>
+        <div class="timestamp">Terakhir diperbarui<strong id="last-updated">Belum ada data</strong></div>
+      </section>
+      <section class="api-panel" aria-labelledby="api-panel-heading">
+        <div class="api-icon">⌘</div><div class="api-text"><h2 id="api-panel-heading">Koneksi API</h2><p>Masukkan nilai <code>IOT_API_KEY</code> dari file <code>.env</code> untuk membuka data.</p></div>
+        <form id="auth-form" class="auth-form"><label class="sr-only" for="api-key">X-API-Key</label><input id="api-key" type="password" placeholder="Masukkan X-API-Key" autocomplete="off" required><button type="submit" class="btn primary">Hubungkan</button></form>
+      </section>
+      <section class="stats" aria-label="Statistik realtime">
+        <article class="metric"><div class="metric-head"><span>TEMPERATURE</span><span class="metric-icon orange">♨</span></div><div class="metric-value"><span id="temp">--</span><small>°C</small></div><div class="metric-foot"><span id="temp-status" class="tag neutral">Menunggu data</span><span class="foot-note">DHT22 Sensor</span></div></article>
+        <article class="metric"><div class="metric-head"><span>HUMIDITY</span><span class="metric-icon blue">◉</span></div><div class="metric-value"><span id="humidity">--</span><small>%</small></div><div class="metric-foot"><span class="tag positive">Relative Humidity</span><span class="foot-note">DHT22 Sensor</span></div></article>
+        <article class="metric"><div class="metric-head"><span>TEMPERATURE LIMIT</span><span class="metric-icon purple">⚑</span></div><div class="metric-value"><span id="threshold-value">--</span><small>°C</small></div><div class="metric-foot"><span class="tag neutral">Alert threshold</span><span class="foot-note">Dapat diubah</span></div></article>
+        <article class="metric"><div class="metric-head"><span>DEVICE STATUS</span><span class="metric-icon green">⏻</span></div><div class="metric-value small-value" id="lamp-value">UNKNOWN</div><div class="metric-foot"><span id="device-tag" class="tag neutral">Belum terhubung</span><span class="foot-note">Lamp Actuator</span></div></article>
+      </section>
+      <section class="primary-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h2>Sensor Analytics</h2><p>Grafik live berdasarkan pesan WebSocket, bukan polling.</p></div><span class="live-indicator"><span></span> LIVE</span></div>
+          <div class="chart-wrap"><canvas id="sensor-chart" aria-label="Grafik suhu dan kelembaban" role="img"></canvas><div id="chart-fallback" class="chart-fallback" hidden>Chart.js belum termuat. Pastikan browser tersambung internet.</div></div>
+          <div class="legend"><span><i class="legend-color temp-color"></i> Temperature (°C)</span><span><i class="legend-color humid-color"></i> Humidity (%)</span></div>
+        </article>
+        <article class="panel control-panel">
+          <div class="panel-heading"><div><h2>Device Controls</h2><p>Kontrol aktuator melalui MQTT.</p></div><span class="panel-symbol">⚡</span></div>
+          <div class="device-visual"><div class="bulb" id="bulb">✦</div><strong>Smart Lamp</strong><span>ESP32 / GPIO Simulator</span></div>
+          <div class="controls"><button class="btn control-on" id="lamp-on">⏻ &nbsp; Nyalakan</button><button class="btn control-off" id="lamp-off">○ &nbsp; Matikan</button></div>
+          <div class="section-line"></div>
+          <h3>Temperature Alert</h3><p class="subtext">Kirim notifikasi otomatis ketika suhu melintasi batas.</p>
+          <form id="threshold-form" class="threshold-form"><label for="threshold-input">Batas suhu (°C)</label><div><input id="threshold-input" type="number" min="0" max="80" step="0.1" value="30" required><button class="btn primary" type="submit">Simpan</button></div></form>
+        </article>
+      </section>
+      <section class="lower-grid">
+        <article class="panel history-panel"><div class="panel-heading"><div><h2>Sensor History</h2><p>50 data terakhir tersimpan permanen di SQLite.</p></div><span id="history-count" class="count-badge">0 readings</span></div><div class="table-scroll"><table><thead><tr><th>RECEIVED AT</th><th>TEMPERATURE</th><th>HUMIDITY</th><th>STATUS</th></tr></thead><tbody id="history-body"><tr><td colspan="4" class="table-empty">Belum ada data sensor</td></tr></tbody></table></div></article>
+        <article class="panel alert-panel"><div class="panel-heading"><div><h2>Alerts & Activity</h2><p>Peristiwa batas suhu dan aktivitas sistem.</p></div><span class="bell">♧</span></div><div id="activity" class="activity-list"><p class="empty-activity">Belum ada aktivitas.</p></div></article>
+      </section>
+      <footer>Praktikum 9 • Pemrograman Internet of Things (SIF1502) <span>Node-RED / Mosquitto / SQLite / Chart.js</span></footer>
+    </main>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>
